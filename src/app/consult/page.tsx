@@ -9,6 +9,11 @@ interface Message {
   text: string;
 }
 
+interface StreamEvent {
+  type?: string;
+  data?: unknown;
+}
+
 export default function Page() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -47,10 +52,7 @@ export default function Page() {
       miraIndex = prev.length;
       return [
         ...prev,
-        {
-          sender: "mira",
-          text: "Baik, aku sedang menganalisis pertanyaanmu...",
-        },
+        { sender: "mira", text: "Baik, aku sedang menganalisis pertanyaanmu..." },
       ];
     });
 
@@ -106,27 +108,28 @@ export default function Page() {
             const dataStr = line.replace(/^data:\s*/, "");
             if (!dataStr) continue;
 
-            let event: { type?: string; data?: any } | null = null;
+            let event: StreamEvent = {};
             try {
-              event = JSON.parse(dataStr);
+              event = JSON.parse(dataStr) as StreamEvent;
             } catch {
               event = { type: "partial", data: dataStr };
             }
 
             const type = event.type ?? "partial";
+
             if (type === "partial") {
               const piece =
                 typeof event.data === "string"
                   ? event.data
-                  : String(event.data ?? "");
+                  : JSON.stringify(event.data);
               miraReplyAcc = piece;
               updateMira(miraReplyAcc);
             } else if (type === "final") {
-              const data = event.data ?? {};
+              const data = event.data as { ai_analysis?: string } | undefined;
               const ai_text =
-                typeof data.ai_analysis === "string"
+                typeof data?.ai_analysis === "string"
                   ? data.ai_analysis
-                  : String(data ?? "");
+                  : JSON.stringify(data ?? "");
               miraReplyAcc = ai_text;
               updateMira(miraReplyAcc);
             } else if (type === "error") {
@@ -137,19 +140,17 @@ export default function Page() {
         buffer = parts[parts.length - 1];
       }
     } catch (err) {
-      if ((err as any)?.name === "AbortError") {
+      const errorObj = err as Error;
+      if (errorObj.name === "AbortError") {
         setMessages((prev) => [
           ...prev,
           { sender: "mira", text: "⚠️ Permintaan dibatalkan." },
         ]);
       } else {
-        console.error("Streaming error:", err);
+        console.error("Streaming error:", errorObj);
         setMessages((prev) => [
           ...prev,
-          {
-            sender: "mira",
-            text: "⚠️ Terjadi kesalahan jaringan. Coba lagi ya.",
-          },
+          { sender: "mira", text: "⚠️ Terjadi kesalahan jaringan. Coba lagi ya." },
         ]);
       }
     } finally {
@@ -159,10 +160,10 @@ export default function Page() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-800 flex flex-col">
+    <div className="flex flex-col min-h-screen text-gray-800 bg-white">
       {/* Header */}
-      <header className="bg-white border-b border-green-100 pt-20">
-        <div className="max-w-6xl mx-auto flex items-center gap-3 px-6 py-4">
+      <header className="pt-20 bg-white border-b border-green-100">
+        <div className="flex items-center max-w-6xl gap-3 px-6 py-4 mx-auto">
           <Image
             src="/asset/avatar-mira.png"
             alt="Mira Avatar"
@@ -180,9 +181,9 @@ export default function Page() {
       {/* Chat Container */}
       <main
         ref={chatContainerRef}
-        className="bg-green-50 flex-1 py-6 overflow-y-auto"
+        className="flex-1 py-6 overflow-y-auto bg-green-50"
       >
-        <div className="max-w-6xl mx-auto px-6 space-y-6">
+        <div className="max-w-6xl px-6 mx-auto space-y-6">
           {messages.map((msg, idx) => (
             <div
               key={idx}
@@ -191,25 +192,28 @@ export default function Page() {
               }`}
             >
               <div
-                className={`px-4 py-2 rounded-2xl max-w-xs md:max-w-md ${
+                className={`px-5 py-3 rounded-2xl max-w-xs md:max-w-md ${
                   msg.sender === "user"
                     ? "bg-green-600 text-white rounded-br-none"
-                    : "bg-white border border-green-100 rounded-bl-none"
+                    : "bg-white border border-green-100 rounded-bl-none shadow-sm"
                 }`}
               >
                 {msg.sender === "mira" ? (
-                  <div className="prose prose-sm [&>p]:mt-4 [&>p]:mb-4 leading-relaxed">
+                  <div className="prose prose-sm max-w-none [&>p]:mt-4 [&>p]:mb-4 leading-relaxed">
                     <ReactMarkdown
                       components={{
                         p: ({ children }) => (
-                          <p className="mt-4 mb-4 leading-relaxed">
-                            {children}
-                          </p>
+                          <p className="mt-3 mb-3 leading-relaxed">{children}</p>
                         ),
                         li: ({ children }) => (
-                          <li className="ml-5 list-disc mb-2">{children}</li>
+                          <li className="mb-2 ml-5 list-disc">{children}</li>
                         ),
                         hr: () => <hr className="my-6 border-green-200" />,
+                        h3: ({ children }) => (
+                          <h3 className="mt-4 mb-2 font-semibold text-green-700">
+                            {children}
+                          </h3>
+                        ),
                       }}
                     >
                       {msg.text}
@@ -226,13 +230,13 @@ export default function Page() {
 
       {/* Input */}
       <footer className="fixed bottom-0 w-full px-6 py-4 bg-white border-t border-green-100">
-        <div className="max-w-6xl mx-auto flex items-center gap-2">
+        <div className="flex items-center max-w-6xl gap-2 mx-auto">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Tulis pesan."
-            className="flex-1 border border-green-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-400"
+            className="flex-1 px-4 py-2 text-sm border border-green-300 rounded-full focus:outline-none focus:ring-1 focus:ring-green-400"
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
             disabled={isLoading}
             aria-label="Pesan untuk Mira"
